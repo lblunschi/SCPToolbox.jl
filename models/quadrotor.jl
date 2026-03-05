@@ -431,10 +431,8 @@ function plot_tilt_angle(mdl::QuadrotorProblem,
     ax.set_ylim((0, y_top))
 
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel(string("Tilt",
-                         " \$\\arccos({\\hat n^{\\scriptscriptstyle",
-                         "\\mathsf{T}}a}\\|a\\|_2^{-1})\$",
-                         " [\$^\\circ\$]"))
+    ax.set_ylabel("Tilt \$\\arccos(\\hat n^{\\mathsf{T}} a / \\|a\\|_2)\$ [\$^\\circ\$]")
+
 
     # ..:: Tilt angle bounds ::..
     bnd_max = rad2deg(mdl.vehicle.tilt_max)

@@ -1,10 +1,10 @@
 # LCvx: 3-DoF Fuel-Optimal Rocket Landing
-
+import MathOptInterface as MOI
 using LinearAlgebra
 using JuMP, ECOS
 using PyPlot
 using Printf
-
+using PyCall
 ################################################################################
 # ..:: Data structures ::..
 #
@@ -217,7 +217,8 @@ function solve_pdg_fft(rocket::Data.Rocket,t_f::LCvxReal)::Data.Solution
     A,B,p = c2d(rocket,Δt)
 
     # ..:: Make the optimization problem ::..
-    mdl = Model(with_optimizer(ECOS.Optimizer,verbose=0))
+    mdl = Model(ECOS.Optimizer)
+    #set_silent(mdl)
 
     # >> (Scaled) variables <<
     @variable(mdl, r_s[1:3,1:N])
@@ -512,7 +513,7 @@ function set_fonts()::Nothing
     fig_small_sz = 12
     fig_med_sz = 15
     fig_big_sz = 17
-    plt.rc("text", usetex=true)
+    plt.rc("text", usetex=false)
     plt.rc("font", size=fig_small_sz, family="serif")
     plt.rc("axes", titlesize=fig_small_sz)
     plt.rc("axes", labelsize=fig_med_sz)
@@ -584,7 +585,19 @@ ax.set_xticks(ticks=[0,1,2,3])
 ax.set_yticks(ticks=[-1,0,1])
 ax.set_xlim([0,3])
 ax.set_ylim([-1,1])
-fig.savefig("../../figures/lcvx_3dof_rocket_pos_xy.pdf",bbox_inches="tight")
+figdir = normpath(joinpath(@__DIR__, "..", "..", "figures"))
+mkpath(figdir)
+@info "Saving figures to" figdir isdir(figdir)
+try
+    fig.savefig(joinpath(figdir, "lcvx_3dof_rocket_pos_xy.pdf"), bbox_inches="tight")
+catch e
+    @error "savefig failed" exception=e
+    if e isa PyCall.PyError
+        println("Python exception type: ", e.T)
+        println("Python exception value: ", e.val)
+    end
+    rethrow()
+end
 # @ (x,z) trajectory @
 fig = plt.figure(figsize=(4,4))
 plt.clf()
@@ -620,7 +633,16 @@ ax.set_xticks(ticks=[0,1,2,3])
 ax.set_yticks(ticks=[0,1,2])
 ax.set_ylim([-1,2])
 ax.set_xlim([0,3])
-fig.savefig("../../figures/lcvx_3dof_rocket_pos_xz.pdf",bbox_inches="tight")
+try
+    fig.savefig(joinpath(figdir, "lcvx_3dof_rocket_pos_xz.pdf"),bbox_inches="tight")
+catch e
+    @error "savefig failed" exception=e
+    if e isa PyCall.PyError
+        println("Python exception type: ", e.T)
+        println("Python exception value: ", e.val)
+    end
+    rethrow()
+end
 # @ (y,z) trajectory @
 fig = plt.figure(figsize=(4,4))
 plt.clf()
@@ -649,7 +671,17 @@ ax.set_xticks(ticks=[-1,-0.5,0,0.5,1])
 ax.set_yticks(ticks=[0,1,2])
 ax.set_xlim([-1,1])
 ax.set_ylim([-0.5,2])
-fig.savefig("../../figures/lcvx_3dof_rocket_pos_yz.pdf",bbox_inches="tight")
+try
+    fig.savefig(joinpath(figdir, "lcvx_3dof_rocket_pos_yz.pdf"),bbox_inches="tight")
+catch e
+    @error "savefig failed" exception=e
+    if e isa PyCall.PyError
+        println("Python exception type: ", e.T)
+        println("Python exception value: ", e.val)
+    end
+    rethrow()
+end
+
 ################################################################################
 
 ################################################################################
@@ -673,7 +705,17 @@ ax.set_xlim([0,75])
 ax.set_ylim([0,v_max+50])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel(L"Speed $\|v(t)\|_2$ [km/h]")
-fig.savefig("../../figures/lcvx_3dof_rocket_speed.pdf",bbox_inches="tight")
+try
+    fig.savefig(joinpath(figdir, "lcvx_3dof_rocket_speed.pdf"),bbox_inches="tight")
+catch e
+    @error "savefig failed" exception=e
+    if e isa PyCall.PyError
+        println("Python exception type: ", e.T)
+        println("Python exception value: ", e.val)
+    end
+    rethrow()
+end
+
 ################################################################################
 
 ################################################################################
@@ -697,7 +739,17 @@ ax.set_xlim([0,75])
 ax.set_ylim([1450,1950])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("Mass [kg]")
-fig.savefig("../../figures/lcvx_3dof_rocket_mass.pdf",bbox_inches="tight")
+try
+    fig.savefig(joinpath(figdir, "lcvx_3dof_rocket_mass.pdf"),bbox_inches="tight")
+
+catch e
+    @error "savefig failed" exception=e
+    if e isa PyCall.PyError
+        println("Python exception type: ", e.T)
+        println("Python exception value: ", e.val)
+    end
+    rethrow()
+end
 ################################################################################
 
 ################################################################################
@@ -723,7 +775,17 @@ ax.set_xlim([0,75])
 ax.set_ylim([0,16])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("Thrust [kN]")
-fig.savefig("../../figures/lcvx_3dof_rocket_thrust.pdf",bbox_inches="tight")
+try
+    fig.savefig(joinpath(figdir, "lcvx_3dof_rocket_thrust.pdf"),bbox_inches="tight")
+
+catch e
+    @error "savefig failed" exception=e
+    if e isa PyCall.PyError
+        println("Python exception type: ", e.T)
+        println("Python exception value: ", e.val)
+    end
+    rethrow()
+end
 ################################################################################
 
 ################################################################################
@@ -755,7 +817,16 @@ ax.set_xlim([0,75])
 ax.set_ylim([0,15])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel(L"Thrust along $\hat e_z$ [kN]")
-fig.savefig("../../figures/lcvx_3dof_rocket_thrust_z.pdf",bbox_inches="tight")
+try
+    fig.savefig(joinpath(figdir, "lcvx_3dof_rocket_thrust_z.pdf"),bbox_inches="tight")
+catch e
+    @error "savefig failed" exception=e
+    if e isa PyCall.PyError
+        println("Python exception type: ", e.T)
+        println("Python exception value: ", e.val)
+    end
+    rethrow()
+end
 ################################################################################
 
 ################################################################################
@@ -779,5 +850,14 @@ ax.set_xlim([0,75])
 ax.set_ylim([0,50])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel(L"Pointing angle [$^\circ$]")
-fig.savefig("../../figures/lcvx_3dof_rocket_angle.pdf",bbox_inches="tight")
+try
+    fig.savefig(joinpath(figdir, "lcvx_3dof_rocket_angle.pdf"),bbox_inches="tight")
+catch e
+    @error "savefig failed" exception=e
+    if e isa PyCall.PyError
+        println("Python exception type: ", e.T)
+        println("Python exception value: ", e.val)
+    end
+    rethrow()
+end
 ################################################################################

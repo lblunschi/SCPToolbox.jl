@@ -1292,7 +1292,7 @@ function create_figure(size::Tuple{T, V})::Figure where {T<:Real, V<:Real}
 
     # Set plot parameters
     rcParams = PyPlot.PyDict(PyPlot.matplotlib."rcParams")
-    rcParams["text.usetex"] = true
+    rcParams["text.usetex"] = false
     rcParams["font.family"] = "sans-serif"
     rcParams["axes.labelsize"] = 14
     rcParams["xtick.labelsize"] = 12
@@ -1332,7 +1332,9 @@ function save_figure(filename::T_String, algo::T_String;
 
     algo = lowercase(split(algo, " "; limit=2)[1])
     path = isnothing(path) ? "../../figures/" : path
-
+    figdir = normpath(joinpath(@__DIR__, "..", "..", "figures"))
+    mkpath(figdir)
+    
     # Apply tight layout, only do this **once** per figure
     if !_helper__tight_layout_applied
         plt.tight_layout()
@@ -1340,14 +1342,28 @@ function save_figure(filename::T_String, algo::T_String;
     end
 
     # Save figure
+    @info "Saving figures to" figdir isdir(figdir)
     if !tmp
-        plt.savefig(@sprintf("%s%s_%s.pdf", path, algo, filename),
-                    bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
+        
+        try
+            outpath = joinpath(figdir, @sprintf("%s_%s.pdf", algo, filename))
+            plt.savefig(outpath, bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
+            @info "Saved figure" outpath
+        catch e
+            @error "savefig failed" exception=e
+            if e isa PyCall.PyError
+                println("Python exception type: ", e.T)
+                println("Python exception value: ", e.val)
+            end
+            rethrow()
+        end
+        
         plt.close()
         _helper__tight_layout_applied = false # reset
     else
-        plt.savefig(@sprintf("/tmp/%s_%s.pdf", algo, filename),
-                    bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
+        outpath = @sprintf("/tmp/%s_%s.pdf", algo, filename)
+        plt.savefig(outpath, bbox_inches="tight", pad_inches=0.01, facecolor=zeros(4))
+        @info "Saved figure" outpath
     end
 
     return nothing

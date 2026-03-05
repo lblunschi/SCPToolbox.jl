@@ -92,8 +92,25 @@ history = history_list[end]
 # :: Plot results :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 # :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-plot_trajectory_history(mdl, history)
+try
+    plot_trajectory_history(mdl, history)
+catch err
+    showerror(stderr, err, catch_backtrace())
+end
+@info "Plotting final trajectory..."
 plot_final_trajectory(mdl, sol)
+@info "Plotting final input..."
 plot_input_norm(mdl, sol)
-plot_tilt_angle(mdl, sol)
-plot_convergence(history_list, "quadrotor")
+@info "Plotting final tilt angle..."
+try
+    plot_tilt_angle(mdl, sol)
+catch err
+    showerror(stderr, err, catch_backtrace())
+end
+@info "Plotting convergence..."
+try
+    plot_convergence(history_list, "quadrotor")
+
+catch err
+    showerror(stderr, err, catch_backtrace())
+end
