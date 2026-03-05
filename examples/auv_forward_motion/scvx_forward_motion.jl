@@ -22,8 +22,8 @@ using LinearAlgebra
 using Plots
 using InteractiveUtils
 using ForwardDiff
-include("common_2d.jl")
-include("../../models/auv_2d.jl")
+include("common_forward_motion.jl")
+include("../../models/auv_forward_motion.jl")
 include("../../core/problem.jl")
 include("../../core/scvx.jl")
 include("create_vid.jl")
