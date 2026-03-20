@@ -800,7 +800,7 @@ function create_figure(
     set_with_default(key, val) = begin
         rcParams[key] = (key in keys(options)) ? options[key] : val
     end
-    set_with_default("text.usetex", true)
+    set_with_default("text.usetex", false)
     set_with_default("font.family", "sans-serif")
     set_with_default("axes.labelsize", 14)
     set_with_default("axes.titlesize", 14)

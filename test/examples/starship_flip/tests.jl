@@ -73,7 +73,7 @@ function scvx()::Nothing
     pbm = TrajectoryProblem(mdl)
     define_problem!(pbm, :scvx)
 
-    # PTR algorithm parameters
+    # SCvx algorithm parameters
     N = 31
     Nsub = 100
     iter_max = 100

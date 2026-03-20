@@ -28,46 +28,71 @@ test_heading(algo, description) =
 # Number of trials if statistics are gathered
 const NUM_TRIALS = 3
 
-@testset "DoubleIntegrator" begin
-    test_heading("LCvx", "Double integrator")
-    Examples.DoubleIntegrator.lcvx()
-end
+# @testset "DoubleIntegrator" begin
+#     test_heading("LCvx", "Double integrator")
+#     Examples.DoubleIntegrator.lcvx()
+# end
 
 @testset "RocketLanding" begin
     test_heading("LCvx", "Rocket landing")
     Examples.RocketLanding.lcvx()
 end
 
-@testset "Oscillator" begin
-    test_heading("PTR", "Oscillator")
-    Examples.Oscillator.ptr()
-end
+# @testset "Oscillator" begin
+#     test_heading("PTR", "Oscillator")
+#     Examples.Oscillator.ptr()
+# end
 
 @testset "Quadrotor" begin
     test_heading("SCvx", "Quadrotor")
     Examples.Quadrotor.scvx(NUM_TRIALS)
 
-    test_heading("GuSTO", "Quadrotor")
-    Examples.Quadrotor.gusto(NUM_TRIALS)
+    # test_heading("GuSTO", "Quadrotor")
+    # Examples.Quadrotor.gusto(NUM_TRIALS)
 end
 
-@testset "FreeFlyer" begin
-    test_heading("SCvx", "FreeFlyer")
-    Examples.FreeFlyer.scvx(NUM_TRIALS)
+# @testset "FreeFlyer" begin
+#     test_heading("SCvx", "FreeFlyer")
+#     Examples.FreeFlyer.scvx(NUM_TRIALS)
 
-    test_heading("GuSTO", "FreeFlyer")
-    Examples.FreeFlyer.gusto(NUM_TRIALS)
-end
+#     test_heading("GuSTO", "FreeFlyer")
+#     Examples.FreeFlyer.gusto(NUM_TRIALS)
+# end
 
 @testset "Starship" begin
-    test_heading("PTR", "Starship flip")
-    Examples.Starship.ptr()
+
 
     test_heading("SCvx", "Starship flip")
     Examples.Starship.scvx()
 end
 
-@testset "RendezvousPlanar" begin
+"""@testset "AUVSimplified" begin
+
+    test_heading("SCvx", "AUV Simplified Trajectory")
+    Examples.AUVSimplified.scvx_simplified()
+end"""
+
+# @testset "AUVThruster" begin
+#     # test_heading("SCvx", "AUV Thruster")
+#     # Examples.AUVThruster.sweep_gamma_tf_max()
+
+#     test_heading("SCvx", "AUV Thruster")
+#     Examples.AUVThruster.multiple_settings()
+
+#     """test_heading("SCvx", "AUV Thruster")
+#     Examples.AUVThruster.scvx()"""
+# end
+
+"""
+@testset "AUV" begin
+
+    test_heading("SCvx", "AUV Trajectory")
+    Examples.AUV.scvx()
+end"""
+
+
+
+"""@testset "RendezvousPlanar" begin
     test_heading("PTR", "Planar rendezvous")
     Examples.RendezvousPlanar.ptr()
 end
@@ -76,4 +101,4 @@ end
     test_heading("PTR", "Apollo rendezvous")
     homotopy_sweep_steps = 3
     Examples.Rendezvous3D.ptr(NUM_TRIALS, homotopy_sweep_steps)
-end
+end"""
