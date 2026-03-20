@@ -183,7 +183,7 @@ function create(pars::Parameters, traj::TrajectoryProblem)::SCPProblem
         # Dynamic feasibility flag (true or false)
         (:dynfeas, "dyn", "%s", 3),
         # Trust region size
-        (:tr, "η", "%.2f", 5),
+        (:tr, "η", "%.2e", 8),
         # Convexification performance metric
         (:ρ, "ρ", "%s", 9),
         # Predicted cost improvement (percent)
@@ -192,6 +192,10 @@ function create(pars::Parameters, traj::TrajectoryProblem)::SCPProblem
         (:dtr, "Δη", "%s", 3),
         # Reject solution indicator
         (:rej, "rej", "%s", 5),
+        # Defect of solution
+        (:def, "def", "%s", 5),
+        # Rollout errror
+        (:roll_err, "roll_err", "%s", 5),
     ]
 
     # User-defined extra columns
@@ -438,7 +442,14 @@ function SubproblemSolution(spbm::Subproblem)::SubproblemSolution
 
     # Save the optimal cost values
     sol.L = value(spbm.L)
-    sol.L_pen = value(spbm.L_pen)
+    L_pen = value(spbm.L_pen)
+
+    if L_pen < -1e-8
+        @warn "L_pen significantly negative" L_pen
+    end
+
+    sol.L_pen = max(L_pen, 0.0)
+
     sol.L_aug = value(spbm.L_aug)
 
     return sol
@@ -482,7 +493,7 @@ function solve(
     while true
         # Construct the subproblem
         spbm = Subproblem(pbm, k, η, ref)
-
+        
         add_dynamics!(spbm)
         add_convex_state_constraints!(spbm)
         add_convex_input_constraints!(spbm)
@@ -518,17 +529,24 @@ function solve(
                 print_info(spbm)
                 break
             end
-
+            prev_trust_region = spbm.η
             # Update trust region
             ref, η = update_trust_region!(spbm)
+            if spbm.sol.reject && spbm.η <= pbm.pars.η_lb + 1e-12 && prev_trust_region <= pbm.pars.η_lb + 1e-12
+                println("Stopping: rejected step at minimum trust region")
+                println("New η: ", spbm.η, "| Previous η: ", prev_trust_region, "| Minimum η: ", pbm.pars.η_lb)
+                print_info(spbm)
+                break
+            end
         catch e
             isa(e, SCPError) || rethrow(e)
             print_info(spbm, e)
             break
         end
 
+        this_sol = SCPSolution(history)
         # Print iteration info
-        print_info(spbm)
+        print_info(spbm; this_sol.xc, this_sol.td)
 
         # Stop at maximum iterations
         k += 1
@@ -891,11 +909,12 @@ function compute_linear_cost_penalty!(spbm::Subproblem)::Nothing
             Pf2
         end)
     end
-
+    
     spbm.L_pen = @add_cost(prg, (P, Pf), begin
         local P, Pf = arg
         trapz(λ * P, t) + sum(λ * Pf)
     end)
+
 
     return nothing
 end
@@ -975,6 +994,9 @@ function solution_cost!(sol::SubproblemSolution, kind::Symbol, pbm::SCPProblem):
         if isnan(sol.J_aug)
             J_orig = sol.L
             J_pen = actual_cost_penalty!(sol, pbm)
+            if J_pen < 0
+                println("Something is off! J_pen < 0: ", J_pen)
+            end
             sol.J_aug = J_orig + J_pen
         end
         cost = sol.J_aug
@@ -1068,7 +1090,7 @@ Print command line info message.
 - `spbm`: the subproblem that was solved.
 - `err`: an SCvx-specific error message.
 """
-function print_info(spbm::Subproblem, err::Union{Nothing,SCPError} = nothing)::Nothing
+function print_info(spbm::Subproblem, err::Union{Nothing,SCPError} = nothing; xc=missing, td=missing)::Nothing
 
     # Convenience variables
     sol = spbm.sol
@@ -1095,6 +1117,26 @@ function print_info(spbm::Subproblem, err::Union{Nothing,SCPError} = nothing)::N
         status = status[1:min(8, length(status))]
         ρ = !isnan(sol.ρ) ? @sprintf("%.2f", sol.ρ) : ""
         ρ = (length(ρ) > 8) ? @sprintf("%.1e", sol.ρ) : ρ
+        defect_max = -999
+        Npoints = size(sol.xd,2)
+        for ki = 1:Npoints-1
+            max_defect_i = norm(scale.iSx * ref.defect[:, ki], Inf)
+            if max_defect_i > defect_max
+                defect_max = max_defect_i
+            end
+        end
+
+        rollout_err_max = 999
+        if !ismissing(xc)
+            rollout_errs = zeros(size(sol.xd))
+            for k in 1:size(sol.xd, 2)
+                rollout_errs[:,k] = (sample(xc, td[k]) .- sol.xd[:,k])
+            end
+            
+            rollout_err_max = norm(rollout_errs/Npoints, 1)
+            
+        end
+        
 
         # Associate values with columns
         assoc = Dict(
@@ -1109,11 +1151,13 @@ function print_info(spbm::Subproblem, err::Union{Nothing,SCPError} = nothing)::N
             :dp => max_dph,
             :dynfeas => sol.feas ? "T" : "F",
             :δ => sol.deviation,
+            :def => defect_max,
             :ρ => ρ,
             :pre_improv => sol.pre_improv / abs(ref.J_aug) * 100,
             :dtr => sol.tr_update,
             :rej => sol.reject ? "x" : "",
             :tr => spbm.η,
+            :roll_err => rollout_err_max,
         )
 
         print(assoc, table)

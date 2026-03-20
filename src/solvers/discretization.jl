@@ -264,6 +264,37 @@ function derivs_foh(
 
     # Compute the running derivatives for the discrete-time state update
     # matrices
+    # cPhi = cond(Phi)
+    # if !isfinite(cPhi) || cPhi > 1e12
+    #     @show t k cPhi
+    #     @show det(Phi)
+    #     @show svdvals(Phi)
+    #     @show maximum(abs.(Phi))
+    #     @show minimum(abs.(Phi))
+    #     println("Phi =")
+    #     display(Phi)
+    #     println("A = ")
+    #     display(A)
+    #     println("B = ")
+    #     display(B)
+    #     println("F = ")
+    #     display(F)
+    #     println("B_m = ")
+    #     display(B_m)
+    #     println("B_p = ")
+    #     display(B_p)
+    #     println("r = ")
+    #     display(r)
+    #     println("E = ")
+    #     display(E)
+    #     println('x')
+    #     display(x)
+    #     println("u")
+    #     display(u)
+    #     println("p")
+    #     display(p)
+    #     # error("Phi is ill-conditioned in derivs_foh at t=$t, k=$k")
+    # end
     iPhi = Phi \ I(nx)
     dPhidt = A * Phi
     dBmdt = iPhi * B_m
