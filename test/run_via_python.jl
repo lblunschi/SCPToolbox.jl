@@ -30,12 +30,16 @@ function capture_logs_to_file(f, log_path::String)
     return result, logs
 end
 
-function init_state()
+function init_state(x0::Float64, y0::Float64, z0::Float64, yaw0::Float64, xf::Float64, yf::Float64, zf::Float64, yawf::Float64)
     mdl = AP.AUVProblem()
     traj = AP.TrajectoryProblem(mdl)
     AP.define_problem!(traj, :scvx)
 
-    N = 50
+    distance = sqrt((xf - x0)^2 + (yf - y0)^2)
+
+    # Ensure spacing between consecutive points is <= 1 m
+    N = max(50, ceil(Int, distance) + 1)
+
     Nsub = 100
     iter_max = 100
     disc_method = AP.FOH
@@ -111,14 +115,14 @@ function run_case!(state::SolverState, x0::Float64, y0::Float64, z0::Float64, ya
     )
 end
 
-state = init_state()
+state = init_state(0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0)
 
 while true
     line = readline(stdin)
     args = JSON.parse(line)
 
     x0, y0, z0, yaw0, xf, yf, zf, yawf, name_i, finished = args
-
+    state_ = init_state(x0, y0, z0, yaw0, xf, yf, zf, yawf)
     if finished
         break
     end

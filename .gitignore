@@ -8,3 +8,5 @@
 !/**/.gitkeep
 !/media/logo/*
 test/venv
+test/evaluation/*
+test/examples/auv_thruster/evaluation/*

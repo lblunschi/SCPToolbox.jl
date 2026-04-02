@@ -67,58 +67,58 @@ function ptr()::Nothing
 end
 
 function scvx()::Nothing
+    for i = 1:2
+        # Problem definition
+        mdl = StarshipProblem()
+        pbm = TrajectoryProblem(mdl)
+        define_problem!(pbm, :scvx)
 
-    # Problem definition
-    mdl = StarshipProblem()
-    pbm = TrajectoryProblem(mdl)
-    define_problem!(pbm, :scvx)
+        # SCvx algorithm parameters
+        N = 31
+        Nsub = 100
+        iter_max = 100
+        disc_method = FOH
+        λ = 5e2
+        ρ_0 = 0.0
+        ρ_1 = 0.1
+        ρ_2 = 0.7
+        β_sh = 2.0
+        β_gr = 2.0
+        η_init = 1.0
+        η_lb = 1e-8
+        η_ub = 10.0
+        ε_abs = 1e-5
+        ε_rel = 0.01 / 100
+        feas_tol = 5e-3
+        q_tr = Inf
+        q_exit = Inf
+        solver = ECOS
+        solver_options = Dict("verbose" => 0, "maxit" => 1000)
+        pars = SCvx.Parameters(
+            N,
+            Nsub,
+            iter_max,
+            disc_method,
+            λ,
+            ρ_0,
+            ρ_1,
+            ρ_2,
+            β_sh,
+            β_gr,
+            η_init,
+            η_lb,
+            η_ub,
+            ε_abs,
+            ε_rel,
+            feas_tol,
+            q_tr,
+            q_exit,
+            solver,
+            solver_options,
+        )
 
-    # SCvx algorithm parameters
-    N = 31
-    Nsub = 100
-    iter_max = 100
-    disc_method = FOH
-    λ = 5e2
-    ρ_0 = 0.0
-    ρ_1 = 0.1
-    ρ_2 = 0.7
-    β_sh = 2.0
-    β_gr = 2.0
-    η_init = 1.0
-    η_lb = 1e-8
-    η_ub = 10.0
-    ε_abs = 1e-5
-    ε_rel = 0.01 / 100
-    feas_tol = 5e-3
-    q_tr = Inf
-    q_exit = Inf
-    solver = ECOS
-    solver_options = Dict("verbose" => 0, "maxit" => 1000)
-    pars = SCvx.Parameters(
-        N,
-        Nsub,
-        iter_max,
-        disc_method,
-        λ,
-        ρ_0,
-        ρ_1,
-        ρ_2,
-        β_sh,
-        β_gr,
-        η_init,
-        η_lb,
-        η_ub,
-        ε_abs,
-        ε_rel,
-        feas_tol,
-        q_tr,
-        q_exit,
-        solver,
-        solver_options,
-    )
-
-    test_single(mdl, pbm, pars, SCvx)
-
+        test_single(mdl, pbm, pars, SCvx)
+    end
     return nothing
 end
 
@@ -152,6 +152,7 @@ function test_single(
 
     # Make plots
     try
+        plot_convergence(history, "Starship")
         plot_trajectory_history(mdl, history)
         plot_final_trajectory(mdl, sol)
         plot_velocity(mdl, sol)

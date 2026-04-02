@@ -17,7 +17,7 @@ def make_trajectory_video_box_realtime(
     tf=None,
     box_L=0.7,
     box_W=0.4,
-    trail=True,
+    trail=False,
     trail_len=80,
     pad=0.2,
     show_start_goal=True,
@@ -31,7 +31,7 @@ def make_trajectory_video_box_realtime(
 
     base = Path(base_dir) if base_dir is not None else Path(__file__).parent
     data_dir = base / "data"
-    run_dir = data_dir / f"case1"
+    run_dir = data_dir / f"run_{run}"
 
     xd = pd.read_csv(run_dir / "data_xd.csv")
     p = pd.read_csv(run_dir / "data_p.csv")
@@ -152,7 +152,7 @@ def make_trajectory_video_box_realtime(
 
 
 if __name__ == "__main__":
-    runs = [1]
+    runs = [188, 181, 182, 183, 184, 185, 186, 187]
     for run in runs:
         info = make_trajectory_video_box_realtime(
             plot_name="solution",

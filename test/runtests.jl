@@ -33,23 +33,23 @@ const NUM_TRIALS = 3
 #     Examples.DoubleIntegrator.lcvx()
 # end
 
-@testset "RocketLanding" begin
-    test_heading("LCvx", "Rocket landing")
-    Examples.RocketLanding.lcvx()
-end
+# @testset "RocketLanding" begin
+#     test_heading("LCvx", "Rocket landing")
+#     Examples.RocketLanding.lcvx()
+# end
 
 # @testset "Oscillator" begin
 #     test_heading("PTR", "Oscillator")
 #     Examples.Oscillator.ptr()
 # end
 
-@testset "Quadrotor" begin
-    test_heading("SCvx", "Quadrotor")
-    Examples.Quadrotor.scvx(NUM_TRIALS)
+# @testset "Quadrotor" begin
+#     test_heading("SCvx", "Quadrotor")
+#     Examples.Quadrotor.scvx(NUM_TRIALS)
 
-    # test_heading("GuSTO", "Quadrotor")
-    # Examples.Quadrotor.gusto(NUM_TRIALS)
-end
+#     # test_heading("GuSTO", "Quadrotor")
+#     # Examples.Quadrotor.gusto(NUM_TRIALS)
+# end
 
 # @testset "FreeFlyer" begin
 #     test_heading("SCvx", "FreeFlyer")

@@ -130,6 +130,11 @@ function auv_initial_guess(
         x0[veh.id_v] = traj.v0
         xf[veh.id_v] = traj.vf
 
+        dx = xf[1] - x0[1]
+        dy = xf[2] - x0[2]
+        yaw = atan(dy, dx) 
+        xf[4] = yaw
+
         x_guess = straightline_interpolate(x0, xf, N)
         u_guess = zeros(pbm.nu, N)
         dist = norm(xf[1:2]-x0[1:2])
@@ -293,7 +298,7 @@ function auv_initial_guess(
 
             coupling_x = (vk - v_c) * (hyd.mass * rk - hyd.added_mass_y * rk)
             coupling_y = (uk - u_c) * (hyd.added_mass_x * rk - hyd.mass * rk)
-            coupling_yaw = (vk - v_c) * (uk - u_c) * (hyd.added_mass_y - hyd.added_mass_x)
+            coupling_yaw = (vk - v_c) * (uk - u_c) * (hyd.added_mass_y - hyd.added_mass_x)* 1.0
 
             drag_x = (hyd.linear_drag_x + hyd.quadratic_drag_x * abs_smooth(urx)) * urx
             drag_y = (hyd.linear_drag_y + hyd.quadratic_drag_y * abs_smooth(ury)) * ury
@@ -346,8 +351,10 @@ function set_cost!(pbm::TrajectoryProblem)::Nothing
             γ = pbm.mdl.traj.γ
             P = get_power_from_thrust(u)
             P_max = get_power_from_thrust(ones(size(u))*2.5)
+            yaw_rate_max = 0.3
+            yaw_rate = x[8]
             #@show typeof(P)
-            return γ*P/P_max/100
+            return γ*P/P_max #+ yaw_rate^2/yaw_rate_max
         end,
     )
 
@@ -366,25 +373,47 @@ end
 
 """
 function get_current(state::AbstractVector;
+    xidx::Int=1,
+    yidx::Int=2,
     yawidx::Int=4,
-    shear::Real=0.2,
-    width::Real=0.5
+    vmax::Real=-0.5,
+    offset::Real=4.0,      # max speed occurs at |d| = 4 m
+    sigma::Real=1.5        # controls band thickness
 )
-    x = state[1]
+    x = state[xidx]
+    y = state[yidx]
     ψ = state[yawidx]
 
-    # inertial shear in +/−y (smooth) WF
-    v_i = -shear * tanh(x / width)
+    # Line: 3.56x - y - 27.0312 = 0
+    a = 3.56
+    b = -1.0
+    c = -27.0312
+
+    # Signed perpendicular distance to the line
+    d = (a*x + b*y + c) / sqrt(a^2 + b^2)
+
+    # Unit vector parallel to the line, in +x,+y direction
+    tx = 1.0
+    ty = 3.56
+    tnorm = sqrt(tx^2 + ty^2)
+    tx /= tnorm
+    ty /= tnorm
+
+    # Smooth magnitude, max at |d| = offset
+    speed = vmax * exp(-((abs(d) - offset)^2) / sigma^2)
+
+    # Inertial/world-frame current
+    u_i = speed * tx
+    v_i = speed * ty
 
     sψ = sin(ψ)
     cψ = cos(ψ)
 
-    # WF -> body (u_i = 0)
-    u_c = sψ * v_i
-    v_c = cψ * v_i
+    # WF -> body
+    u_c =  cψ*u_i + sψ*v_i
+    v_c = -sψ*u_i + cψ*v_i
     w_c = zero(eltype(state))
 
-    # return 0, 0, 0
     return u_c, v_c, w_c
 end
 
@@ -493,7 +522,7 @@ function dynamics(
     urz = v[3] - w_c
 
  
-    yaw_moment = ((ury)*(urx)*(hyd.added_mass_y - hyd.added_mass_x) 
+    yaw_moment = ((ury)*(urx)*(hyd.added_mass_y - hyd.added_mass_x)* 1.0
         + (hyd.linear_drag_yaw + hyd.quadratic_drag_yaw*abs_smooth(v[4]))*v[4])
     #yaw_moment = ((hyd.linear_drag_yaw + hyd.quadratic_drag_yaw*abs_smooth(v[4]))*v[4])
 
@@ -614,6 +643,8 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
             v_robot = x[veh.id_v][2]
             z_pos = x[veh.id_r][3]
             tdil = p[veh.id_t]
+            x_pos = x[veh.id_r][1]
+            y_pos = x[veh.id_r][2]
 
             @add_constraint(ocp, NONPOS, "forward_motion", (u_robot,), begin
                 local u = arg[1]
@@ -635,85 +666,90 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                     v - 0.2*u    # Velocity v <= 0.2*u 
                 end)
 
-            @add_constraint(ocp, NONPOS, "max_time", (tdil,), begin
-                    local tdil_max = arg[1]
-                    tdil_max - traj.tf_max
+            @add_constraint(ocp, NONPOS, "sideways_vel_small_pos", (x_pos, y_pos), begin
+                    local x, y = arg
+                    3.56*x - y - 27.0312    # Harbour Wall constraint 3.56*x - y <= 27.0312 
                 end)
 
-            @add_constraint(ocp, NONPOS, "min_time", (tdil,), begin
-                    local tdil_min = arg[1]
-                    traj.tf_min - tdil_min
-                end)
+            # @add_constraint(ocp, NONPOS, "max_time", (tdil,), begin
+            #         local tdil_max = arg[1]
+            #         tdil_max - traj.tf_max
+            #     end)
+
+            # @add_constraint(ocp, NONPOS, "min_time", (tdil,), begin
+            #         local tdil_min = arg[1]
+            #         traj.tf_min - tdil_min
+            #     end)
         end,
     )
 
     # Convex path constraints on the input
-    problem_set_U!(
-        pbm,
-        (t, k, u, p, pbm, ocp) -> begin
-            veh = pbm.mdl.vehicle
-            traj = pbm.mdl.traj
+    # problem_set_U!(
+    #     pbm,
+    #     (t, k, u, p, pbm, ocp) -> begin
+    #         veh = pbm.mdl.vehicle
+    #         traj = pbm.mdl.traj
 
-            T = u[veh.id_u]
-            T_min = veh.u_min
-            T_max = veh.u_max
+    #         T = u[veh.id_u]
+    #         T_min = veh.u_min
+    #         T_max = veh.u_max
 
-            # Thruster 1
-            @add_constraint(ocp, NONPOS, "max_thrust_1", (T[1],), begin
-                local T = arg[1]
-                T - T_max
-            end)
-            @add_constraint(ocp, NONPOS, "min_thrust_1", (T[1],), begin
-                local T = arg[1]
-                T_min - T
-            end)
-            # Thruster 2
-            @add_constraint(ocp, NONPOS, "max_thrust_2", (T[2],), begin
-                local T = arg[1]
-                T - T_max
-            end)
-            @add_constraint(ocp, NONPOS, "min_thrust_2", (T[2],), begin
-                local T = arg[1]
-                T_min - T
-            end)
-            # Thruster 3
-            @add_constraint(ocp, NONPOS, "max_thrust_3", (T[3],), begin
-                local T = arg[1]
-                T - T_max
-            end)
-            @add_constraint(ocp, NONPOS, "min_thrust_3", (T[3],), begin
-                local T = arg[1]
-                T_min - T
-            end)
-            # Thruster 4
-            @add_constraint(ocp, NONPOS, "max_thrust_4", (T[4],), begin
-                local T = arg[1]
-                T - T_max
-            end)
-            @add_constraint(ocp, NONPOS, "min_thrust_4", (T[4],), begin
-                local T = arg[1]
-                T_min - T
-            end)
-            # Thruster 5
-            @add_constraint(ocp, NONPOS, "max_thrust_5", (T[5],), begin
-                local T = arg[1]
-                T - T_max
-            end)
-            @add_constraint(ocp, NONPOS, "min_thrust_5", (T[5],), begin
-                local T = arg[1]
-                T_min - T
-            end)
-            # Thruster 6
-            @add_constraint(ocp, NONPOS, "max_thrust_6", (T[6],), begin
-                local T = arg[1]
-                T - T_max
-            end)
-            @add_constraint(ocp, NONPOS, "min_thrust_6", (T[6],), begin
-                local T = arg[1]
-                T_min - T
-            end)
-        end,
-    )
+    #         # Thruster 1
+    #         @add_constraint(ocp, NONPOS, "max_thrust_1", (T[1],), begin
+    #             local T = arg[1]
+    #             T - T_max
+    #         end)
+    #         @add_constraint(ocp, NONPOS, "min_thrust_1", (T[1],), begin
+    #             local T = arg[1]
+    #             T_min - T
+    #         end)
+    #         # Thruster 2
+    #         @add_constraint(ocp, NONPOS, "max_thrust_2", (T[2],), begin
+    #             local T = arg[1]
+    #             T - T_max
+    #         end)
+    #         @add_constraint(ocp, NONPOS, "min_thrust_2", (T[2],), begin
+    #             local T = arg[1]
+    #             T_min - T
+    #         end)
+    #         # Thruster 3
+    #         @add_constraint(ocp, NONPOS, "max_thrust_3", (T[3],), begin
+    #             local T = arg[1]
+    #             T - T_max
+    #         end)
+    #         @add_constraint(ocp, NONPOS, "min_thrust_3", (T[3],), begin
+    #             local T = arg[1]
+    #             T_min - T
+    #         end)
+    #         # Thruster 4
+    #         @add_constraint(ocp, NONPOS, "max_thrust_4", (T[4],), begin
+    #             local T = arg[1]
+    #             T - T_max
+    #         end)
+    #         @add_constraint(ocp, NONPOS, "min_thrust_4", (T[4],), begin
+    #             local T = arg[1]
+    #             T_min - T
+    #         end)
+    #         # Thruster 5
+    #         @add_constraint(ocp, NONPOS, "max_thrust_5", (T[5],), begin
+    #             local T = arg[1]
+    #             T - T_max
+    #         end)
+    #         @add_constraint(ocp, NONPOS, "min_thrust_5", (T[5],), begin
+    #             local T = arg[1]
+    #             T_min - T
+    #         end)
+    #         # Thruster 6
+    #         @add_constraint(ocp, NONPOS, "max_thrust_6", (T[6],), begin
+    #             local T = arg[1]
+    #             T - T_max
+    #         end)
+    #         @add_constraint(ocp, NONPOS, "min_thrust_6", (T[6],), begin
+    #             local T = arg[1]
+    #             T_min - T
+    #         end)
+    #     end,
+    # )
 
     return nothing
 end
@@ -789,26 +825,37 @@ function set_bcs!(pbm::TrajectoryProblem)::Nothing
         pbm, :tc,
         # Constraint g
         (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        traj = pbm.mdl.traj
-        rhs = zeros(pbm.nx)
-        rhs[veh.id_r] = traj.rf
-        rhs[veh.id_v] = traj.vf
-        g = x-rhs
-        return g
+            veh  = pbm.mdl.vehicle
+            traj = pbm.mdl.traj
+            # Free final yaw
+            free_idx = veh.id_r[4]
+            # Constrain every terminal state except yaw
+            keep_idx = setdiff(1:pbm.nx, [free_idx])
+            rhs = zeros(pbm.nx)
+            rhs[veh.id_r] = traj.rf
+            rhs[veh.id_v] = traj.vf
+            g = x[keep_idx] - rhs[keep_idx]
+            return g
         end,
+
         # Jacobian dg/dx
         (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        H = I(pbm.nx)
-        return H
+            veh = pbm.mdl.vehicle
+            free_idx = veh.id_r[4]
+            keep_idx = setdiff(1:pbm.nx, [free_idx])
+            H = Matrix(I, pbm.nx, pbm.nx)[keep_idx, :]
+            return H
         end,
+
         # Jacobian dg/dp
         (x, p, pbm) -> begin
-        veh = pbm.mdl.vehicle
-        K = zeros(pbm.nx, pbm.np)
-        return K
-        end)
+            veh = pbm.mdl.vehicle
+            free_idx = veh.id_r[4]
+            keep_idx = setdiff(1:pbm.nx, [free_idx])
+            K = zeros(length(keep_idx), pbm.np)
+            return K
+        end
+    )
 
     return nothing
 end

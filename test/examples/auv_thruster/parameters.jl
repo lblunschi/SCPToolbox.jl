@@ -190,7 +190,7 @@ function AUVProblem()::AUVProblem
     # Time dialation
     tf_min = 5 # Minimum trajectory time
     tf_max = 200 # Maximum trajectory time
-    tf_guess = norm(rf[1:3]-r0[1:3])/0.3 #(tf_max - tf_min)/2
+    tf_guess = norm(rf[1:3]-r0[1:3])/0.2 #(tf_max - tf_min)/2
     use_guess = 0
     γ = 0.4 # Minimum-time vs. minimum-energy tradeoff (1: min time, 0: min energy)
     traj = AUVTrajectoryParameters(r0, 

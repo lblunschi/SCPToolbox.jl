@@ -39,7 +39,7 @@ function multiple_settings()::Nothing
 
 
     kyaw = [-1,0,1]
-    for i=0:15
+    for i=191:191
         x0 = rand() * size_x - size_x/2 + center_x
         y0 = rand() * size_y - size_y/2 + center_y
         z0 = rand() * size_z - size_z/2 + center_z
@@ -48,26 +48,46 @@ function multiple_settings()::Nothing
         yf = rand() * size_y - size_y/2 + center_y
         zf = rand() * size_z - size_z/2 + center_z
         ψf = rand() * 2*π - π
-        for j = 1:3
-            for iguess = 1:2
-                if iguess == 1
+        for j = 1:1
+        # for j = 1:3
+            for iguess = 1:1
+                if iguess == 2
                     id_guess = 0
                 else
                     id_guess = 4
                 end
-                id = 3*2*i+2*(j-1)+iguess
-                
+                id_guess = 4
+                # id = 3*i+(j)#+iguess
+                id = i
                 test_id = "run_$(id)"
                 println("Run: ", id)
                 mdl = AUVProblem()
                 
-                ψf = -1.2802014188338235
+                # ψf = -1.2802014188338235
+                ψf = 1.8446786
                 yaw_final = ψf + 2*pi*kyaw[j]
                 
                 r0 = [x0, y0, z0, ψ0]
                 rf = [xf, yf, zf, yaw_final]
-                rf = [9.517533251421687, 4.50596944352729, -6.32417431252921, yaw_final]
-                r0 = [4.3398531983752635, -1.9266627369118465, -3.9677519098729483, -2.088607210759877]
+                # rf = [9.517533251421687, 4.50596944352729, -6.32417431252921, yaw_final]
+                # r0 = [4.3398531983752635, -1.9266627369118465, -3.9677519098729483, -2.088607210759877]
+                rf = [10.92, 13.55, -3.25, yaw_final]
+                r0 = [8.0, 11.0, -0.2, 0.0]
+
+                rf = [10.92, 13.55, -3.25, yaw_final]
+                r0 = [0.0, 5.0, -0.2, 0.0]
+
+                # if i == 1
+                #     rf = [4.3398531983752635, 4.50596944352729, -6.32417431252921, yaw_final]
+                #     r0 = [9.517533251421687, -1.9266627369118465, -3.9677519098729483, -2.088607210759877]
+
+                # elseif i == 2
+                #     rf = [4.3398531983752635, -1.9266627369118465, -6.32417431252921, yaw_final]
+                #     r0 = [9.517533251421687, 4.50596944352729, -3.9677519098729483, -2.088607210759877]
+                # elseif i == 3
+                #     rf = [9.517533251421687, -1.9266627369118465, -6.32417431252921, yaw_final]
+                #     r0 = [4.3398531983752635, 4.50596944352729, -3.9677519098729483, -2.088607210759877]
+                # end
 
                 mdl.traj.r0 = r0
                 mdl.traj.rf = rf
@@ -80,13 +100,34 @@ function multiple_settings()::Nothing
                 # SCvx algorithm parameters
                 N = 50
                 Nsub = 100
+                
+                id_te = id - 15
+                # if id_te < 4
+                #     N = 50
+                #     Nsub = 50
+                # elseif id_te < 7
+                #     N = 100
+                #     Nsub = 50
+
+                # elseif id_te < 10
+                #     N = 50
+                #     Nsub = 100
+                # elseif id_te < 13
+                #     N = 50
+                #     Nsub = 300
+                # else
+                #     N = 50
+                #     Nsub = 500
+                # end
+                # println("ID: ", id_te ," N: ", N, " Nsub: ", Nsub)
+                    
                 iter_max = 100
                 disc_method = FOH
                 λ = 1e2
                 ρ_0 = 0.0
                 ρ_1 = 0.2
                 ρ_2 = 0.7
-                β_sh = 1.5
+                β_sh = 2.0
                 β_gr = 1.5
                 η_init = 1.0
                 η_lb = 1e-5
@@ -293,7 +334,7 @@ function test_single(
     if plot
         try
             a = 1
-            #plot_convergence(history, "AUV")
+            plot_convergence(history, "AUV")
             plot_trajectory_history(mdl, history; plot_name)
             plot_final_trajectory_x_y(mdl, sol; plot_name)
             plot_final_trajectory_x_z(mdl, sol; plot_name)

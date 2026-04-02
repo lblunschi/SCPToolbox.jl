@@ -33,14 +33,14 @@ class VehicleParams:
     thruster_allocation_matrix: np.ndarray
 
 
-def abs_smooth(z: float, eps: float = 1e-7) -> float:
+def abs_smooth(z: float, eps: float = 1e-3) -> float:
     return np.sqrt(z * z + eps * eps)
 
 
 def get_current(
     state: np.ndarray,
     yawidx: int = 3,
-    shear: float = 0.2,
+    shear: float = 0.3,
     width: float = 0.5,
 ):
     x = state[0]

@@ -544,9 +544,10 @@ function solve(
             break
         end
 
-        this_sol = SCPSolution(history)
+        # this_sol = SCPSolution(history)
         # Print iteration info
-        print_info(spbm; this_sol.xc, this_sol.td)
+        # print_info(spbm; this_sol.xc, this_sol.td)
+        print_info(spbm)
 
         # Stop at maximum iterations
         k += 1
