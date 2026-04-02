@@ -62,21 +62,25 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     # States
     x0 = traj.r0
     xf = traj.rf
-    min_x = minimum([x0[1],xf[1]])
-    max_x = maximum([x0[1],xf[1]])
-    min_y = minimum([x0[2],xf[2]])
-    max_y = maximum([x0[2],xf[2]])
-    min_z = minimum([x0[3],xf[3]])
-    max_z = maximum([x0[3],xf[3]])
+    min_x = minimum([x0[1],xf[1]]) - 2
+    max_x = maximum([x0[1],xf[1]]) + 2
+    min_y = minimum([x0[2],xf[2]]) - 2
+    max_y = maximum([x0[2],xf[2]]) + 2
+    min_z = minimum([x0[3],xf[3]]) - 2
+    max_z = min(0, maximum([x0[3],xf[3]]) + 2)
     # Position
     advise!(pbm, :state, veh.id_r[1], (min_x, max_x))
     advise!(pbm, :state, veh.id_r[2], (min_y, max_y))
     advise!(pbm, :state, veh.id_r[3], (min_z, max_z))
-    advise!(pbm, :state, veh.id_r[4], (-3.1415/4, 3.1415/4)) # TODO check how to scale yaw
+    advise!(pbm, :state, veh.id_r[4], (-3.1415, 3.1415)) # TODO check how to scale yaw
     # Velocity
-    advise!(pbm, :state, veh.id_v[1], (veh.v_min_u, veh.v_max))
-    advise!(pbm, :state, veh.id_v[2:3], (veh.v_min, veh.v_max))
-    advise!(pbm, :state, veh.id_v[4], (-0.2, 0.2)) # TODO check how to scale yaw rate
+
+    # advise!(pbm, :state, veh.id_v[1], (veh.v_min_u, veh.v_max))
+    # advise!(pbm, :state, veh.id_v[2:3], (veh.v_min, veh.v_max))
+    advise!(pbm, :state, veh.id_v[1], (-0.05, 0.2))
+    advise!(pbm, :state, veh.id_v[2], (-0.05,0.05))
+    advise!(pbm, :state, veh.id_v[3], (-0.2, 0.2))
+    advise!(pbm, :state, veh.id_v[4], (-0.1, 0.1)) # TODO check how to scale yaw rate
     # Inputs
     advise!(pbm, :input, veh.id_u, (veh.u_min, veh.u_max))
     # Parameters
@@ -106,58 +110,212 @@ function auv_initial_guess(
     N::Int,
     pbm::TrajectoryProblem,
 )::Tuple{RealMatrix,RealMatrix,RealVector}
+    if pbm.mdl.traj.use_guess == 0
+        @printf("Computing initial guess .")
 
-    @printf("Computing initial guess .")
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+        g = pbm.mdl.env.g
+        hyd = pbm.mdl.hydroparams
 
-    veh = pbm.mdl.vehicle
-    traj = pbm.mdl.traj
-    g = pbm.mdl.env.g
-    hyd = pbm.mdl.hydroparams
+        p_guess = zeros(1)
+        p_guess[1] = (traj.tf_min + traj.tf_max)/2
+        # TEST TODO remove
+        p_guess[1] = traj.tf_guess
+        # State guess
+        x0 = zeros(pbm.nx)
+        xf = zeros(pbm.nx)
+        x0[veh.id_r] = traj.r0
+        xf[veh.id_r] = traj.rf
+        x0[veh.id_v] = traj.v0
+        xf[veh.id_v] = traj.vf
 
-    p_guess = zeros(1)
-    p_guess[1] = (traj.tf_min + traj.tf_max)/2
-    # TEST TODO remove
-    p_guess[1] = traj.tf_guess
-    # State guess
-    x0 = zeros(pbm.nx)
-    xf = zeros(pbm.nx)
-    x0[veh.id_r] = traj.r0
-    xf[veh.id_r] = traj.rf
-    x0[veh.id_v] = traj.v0
-    xf[veh.id_v] = traj.vf
+        x_guess = straightline_interpolate(x0, xf, N)
+        u_guess = zeros(pbm.nu, N)
+        dist = norm(xf[1:2]-x0[1:2])
+        forward_vel = dist/p_guess[1]
+        dist_up = xf[3]-x0[3]
+        up_vel = dist_up/p_guess[1]
+        for k in 1:N
+            x_guess[5, k] = forward_vel
+            x_guess[7, k] = up_vel
 
-    x_guess = straightline_interpolate(x0, xf, N)
-    u_guess = zeros(pbm.nu, N)
-    dist = norm(xf[1:2]-x0[1:2])
-    forward_vel = dist/p_guess[1]
-    dist_up = xf[3]-x0[3]
-    up_vel = dist_up/p_guess[1]
-    for k in 1:N
-        x_guess[5, k] = forward_vel
-        x_guess[7, k] = up_vel
+            # get current at the desired position
+            u_c, v_c, w_c = get_current(x_guess[:,k])
+            # compute relative velocity
+            rel_forward_vel = forward_vel-u_c
+            rel_sideway_vel = 0.0 - v_c
 
-        # get current at the desired position
-        u_c, v_c, w_c = get_current(x_guess[:,k])
-        # compute relative velocity
-        rel_forward_vel = forward_vel-u_c
-        rel_sideway_vel = 0.0 - v_c
+            thrust_forwad = -(hyd.linear_drag_x + hyd.quadratic_drag_x*abs_smooth(rel_forward_vel))*rel_forward_vel
 
-        thrust_forwad = -(hyd.linear_drag_x + hyd.quadratic_drag_x*abs_smooth(rel_forward_vel))*rel_forward_vel
+            thrust_sideway = -(hyd.linear_drag_y + hyd.quadratic_drag_y*abs_smooth(rel_sideway_vel))*rel_sideway_vel
 
-        thrust_sideway = -(hyd.linear_drag_y + hyd.quadratic_drag_y*abs_smooth(rel_sideway_vel))*rel_sideway_vel
+            thrust_up = (- hyd.buoyancy + hyd.weight - (hyd.linear_drag_z + hyd.quadratic_drag_z*abs_smooth(up_vel))*up_vel)
 
-        thrust_up = (- hyd.buoyancy + hyd.weight - (hyd.linear_drag_z + hyd.quadratic_drag_z*abs_smooth(up_vel))*up_vel)
+            thrust_yaw = - (hyd.added_mass_y - hyd.added_mass_x)*rel_forward_vel*rel_sideway_vel
+                    
+            TAM = pbm.mdl.vehicle.thruster_allocation_matrix
+            pinv_TAM = pinv(TAM)
+            u_des = [thrust_forwad; thrust_sideway; thrust_up; thrust_yaw]
+            u_thruster_level = pinv_TAM*u_des
+            u_guess[:, k] = u_thruster_level
+        end
+        @printf(". done\n")
+        return x_guess, u_guess, p_guess
+    else
+        veh = pbm.mdl.vehicle
+        traj = pbm.mdl.traj
+        g = pbm.mdl.env.g
 
-        thrust_yaw = - (hyd.added_mass_y - hyd.added_mass_x)*rel_forward_vel*rel_sideway_vel
-                
-        TAM = pbm.mdl.vehicle.thruster_allocation_matrix
-        pinv_TAM = pinv(TAM)
-        u_des = [thrust_forwad; thrust_sideway; thrust_up; thrust_yaw]
-        u_thruster_level = pinv_TAM*u_des
-        u_guess[:, k] = u_thruster_level
+        
+        # Parameter guess
+        p_guess = zeros(pbm.np)
+        p_guess[veh.id_t] = traj.tf_guess
+
+        # State guess
+        x0 = zeros(pbm.nx)
+        xf = zeros(pbm.nx)
+        x0[veh.id_r] = traj.r0
+        xf[veh.id_r] = traj.rf
+        x0[veh.id_v] = traj.v0
+        xf[veh.id_v] = traj.vf
+        x_guess = zeros(pbm.nx, N)
+        if traj.use_guess == 1
+            xmiddle = zeros(pbm.nx)
+            xmiddle[1] = x0[1]
+            xmiddle[2] = xf[2]
+            xmiddle[3] = 0.5*(x0[3]+xf[3])
+            
+            
+            x_1 = straightline_interpolate(x0, xmiddle, Int(N/2))
+            x_2 = straightline_interpolate(xmiddle, xf, Int(N/2))
+            x_guess[:, 1:Int(N/2)] = x_1
+            x_guess[:, Int(N/2)+1:N] = x_2
+        elseif traj.use_guess == 2
+            xmiddle = zeros(pbm.nx)
+            xmiddle[2] = x0[2]
+            xmiddle[1] = xf[1]
+            xmiddle[3] = 0.5*(x0[3]+xf[3])
+            
+            x_1 = straightline_interpolate(x0, xmiddle, Int(N/2))
+            x_2 = straightline_interpolate(xmiddle, xf, Int(N/2))
+            x_guess[:, 1:Int(N/2)] = x_1
+            x_guess[:, Int(N/2)+1:N] = x_2
+        else
+            x_guess = straightline_interpolate(x0, xf, N)
+        end
+        
+        dt = 50 / (N - 1)
+
+        # assume position path x[1,:], x[2,:], x[3,:] already chosen
+
+        xdot = diff(x_guess[1, :]) ./ dt
+        ydot = diff(x_guess[2, :]) ./ dt
+        zdot = diff(x_guess[3, :]) ./ dt
+
+        psi = zeros(N)
+        u_b = zeros(N)
+        v_b = zeros(N)
+        w_b = zeros(N)
+        r_b = zeros(N)
+
+        for k in 1:N-1
+            psi[k] = atan(ydot[k], xdot[k])   # atan2-style
+            u_b[k] = sqrt(xdot[k]^2 + ydot[k]^2)
+            v_b[k] = 0.0
+            w_b[k] = zdot[k]
+        end
+
+        psi[end] = psi[end-1]
+        u_b[end] = u_b[end-1]
+        v_b[end] = v_b[end-1]
+        w_b[end] = w_b[end-1]
+
+        for k in 1:N-1
+            dpsi = psi[k+1] - psi[k]
+            dpsi = atan(sin(dpsi), cos(dpsi))   # wrapped difference
+            r_b[k] = dpsi / dt
+        end
+        r_b[end] = r_b[end-1]
+
+        x_guess[4, :] = psi
+        x_guess[5, :] = u_b
+        x_guess[6, :] = v_b
+        x_guess[7, :] = w_b
+        x_guess[8, :] = r_b
+
+
+        # -------------------------
+        # 6-thruster input guess
+        # -------------------------
+        u_guess = zeros(pbm.nu, N)
+        TAM = veh.thruster_allocation_matrix
+        TAM_pinv = pinv(TAM)
+        hyd = pbm.mdl.hydroparams
+        denx = hyd.mass - hyd.added_mass_x
+        deny = hyd.mass - hyd.added_mass_y
+        denz = hyd.mass - hyd.added_mass_z
+        denr = hyd.inertia_z - hyd.added_mass_yaw
+
+
+        # Approximate accelerations
+        udot_b = zeros(N)
+        vdot_b = zeros(N)
+        wdot_b = zeros(N)
+        rdot_b = zeros(N)
+
+        for k in 1:(N - 1)
+            udot_b[k] = (u_b[k + 1] - u_b[k]) / dt
+            vdot_b[k] = (v_b[k + 1] - v_b[k]) / dt
+            wdot_b[k] = (w_b[k + 1] - w_b[k]) / dt
+            rdot_b[k] = (r_b[k + 1] - r_b[k]) / dt
+        end
+        udot_b[end] = udot_b[end - 1]
+        vdot_b[end] = vdot_b[end - 1]
+        wdot_b[end] = wdot_b[end - 1]
+        rdot_b[end] = rdot_b[end - 1]
+
+        # Build desired generalized wrench tau_des = [tau_x, tau_y, tau_z, tau_yaw]
+        for k in 1:N
+            uk = u_b[k]
+            vk = v_b[k]
+            wk = w_b[k]
+            rk = r_b[k]
+
+            # Current disabled in your model
+            u_c = 0.0
+            v_c = 0.0
+            w_c = 0.0
+
+            urx = uk - u_c
+            ury = vk - v_c
+            urz = wk - w_c
+
+            coupling_x = (vk - v_c) * (hyd.mass * rk - hyd.added_mass_y * rk)
+            coupling_y = (uk - u_c) * (hyd.added_mass_x * rk - hyd.mass * rk)
+            coupling_yaw = (vk - v_c) * (uk - u_c) * (hyd.added_mass_y - hyd.added_mass_x)
+
+            drag_x = (hyd.linear_drag_x + hyd.quadratic_drag_x * abs_smooth(urx)) * urx
+            drag_y = (hyd.linear_drag_y + hyd.quadratic_drag_y * abs_smooth(ury)) * ury
+            drag_z = (hyd.linear_drag_z + hyd.quadratic_drag_z * abs_smooth(urz)) * urz
+            drag_yaw = (hyd.linear_drag_yaw + hyd.quadratic_drag_yaw * abs_smooth(rk)) * rk
+
+            tau_x = denx * udot_b[k] - drag_x - coupling_x 
+            tau_y = deny * vdot_b[k] - drag_y - coupling_y 
+            tau_z = denz * wdot_b[k] - (hyd.buoyancy - hyd.weight) - drag_z
+            tau_yaw = denr * rdot_b[k] - drag_yaw - coupling_yaw
+
+            tau_des = [tau_x, tau_y, tau_z, tau_yaw]
+
+            # Map generalized wrench to 6 thrusters
+            u_guess[:, k] = TAM_pinv * tau_des
+
+            # Clip to actuator bounds
+            u_guess[:, k] = clamp.(u_guess[:, k], veh.u_min, veh.u_max)
+        end
+
+        return x_guess, u_guess, p_guess
     end
-    @printf(". done\n")
-    return x_guess, u_guess, p_guess
 end
 
 function set_guess!(pbm::TrajectoryProblem)::Nothing
@@ -189,7 +347,7 @@ function set_cost!(pbm::TrajectoryProblem)::Nothing
             P = get_power_from_thrust(u)
             P_max = get_power_from_thrust(ones(size(u))*2.5)
             #@show typeof(P)
-            return γ*P/P_max
+            return γ*P/P_max/100
         end,
     )
 
@@ -226,7 +384,7 @@ function get_current(state::AbstractVector;
     v_c = cψ * v_i
     w_c = zero(eltype(state))
 
-    #return 0, 0, 0
+    # return 0, 0, 0
     return u_c, v_c, w_c
 end
 
@@ -335,7 +493,7 @@ function dynamics(
     urz = v[3] - w_c
 
  
-    yaw_moment = ((ury)*(urx)*(hyd.added_mass_y - hyd.added_mass_x)
+    yaw_moment = ((ury)*(urx)*(hyd.added_mass_y - hyd.added_mass_x) 
         + (hyd.linear_drag_yaw + hyd.quadratic_drag_yaw*abs_smooth(v[4]))*v[4])
     #yaw_moment = ((hyd.linear_drag_yaw + hyd.quadratic_drag_yaw*abs_smooth(v[4]))*v[4])
 
@@ -478,13 +636,13 @@ function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
                 end)
 
             @add_constraint(ocp, NONPOS, "max_time", (tdil,), begin
-                    local tdial = arg[1]
-                    tdial - traj.tf_max
+                    local tdil_max = arg[1]
+                    tdil_max - traj.tf_max
                 end)
 
             @add_constraint(ocp, NONPOS, "min_time", (tdil,), begin
-                    local tdil = arg[1]
-                    traj.tf_min - tdil
+                    local tdil_min = arg[1]
+                    traj.tf_min - tdil_min
                 end)
         end,
     )

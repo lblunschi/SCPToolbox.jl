@@ -39,7 +39,7 @@ function multiple_settings()::Nothing
 
 
     kyaw = [-1,0,1]
-    for i=0:10
+    for i=0:15
         x0 = rand() * size_x - size_x/2 + center_x
         y0 = rand() * size_y - size_y/2 + center_y
         z0 = rand() * size_z - size_z/2 + center_z
@@ -49,74 +49,87 @@ function multiple_settings()::Nothing
         zf = rand() * size_z - size_z/2 + center_z
         ψf = rand() * 2*π - π
         for j = 1:3
-            id = i*3+j
-            test_id = "run_$(id)"
-            println("Run: ", id)
-            mdl = AUVProblem()
-            
-            ψf = 0.6878681055010785
-            yaw_final = ψf + 2*pi*kyaw[j]
-            
-            r0 = [x0, y0, z0, ψ0]
-            rf = [xf, yf, zf, yaw_final]
-            rf = [9.352609132098737, -1.225203287580804, -8.41251223584438, yaw_final]
-            r0 = [1.7694543595373882, -8.01687756083879, -8.853857681192832, -1.5623076089129555]
+            for iguess = 1:2
+                if iguess == 1
+                    id_guess = 0
+                else
+                    id_guess = 4
+                end
+                id = 3*2*i+2*(j-1)+iguess
+                
+                test_id = "run_$(id)"
+                println("Run: ", id)
+                mdl = AUVProblem()
+                
+                ψf = -1.2802014188338235
+                yaw_final = ψf + 2*pi*kyaw[j]
+                
+                r0 = [x0, y0, z0, ψ0]
+                rf = [xf, yf, zf, yaw_final]
+                rf = [9.517533251421687, 4.50596944352729, -6.32417431252921, yaw_final]
+                r0 = [4.3398531983752635, -1.9266627369118465, -3.9677519098729483, -2.088607210759877]
 
-            mdl.traj.r0 = r0
-            mdl.traj.rf = rf
-            mdl.traj.tf_guess = mdl.traj.tf_max #tf_guess[id]
+                mdl.traj.r0 = r0
+                mdl.traj.rf = rf
+                mdl.traj.tf_guess = norm(rf[1:3]-r0[1:3])/0.3 #30 #tf_guess[id]
+                mdl.traj.use_guess = id_guess
 
-            pbm = TrajectoryProblem(mdl)
-            define_problem!(pbm, :scvx)
+                pbm = TrajectoryProblem(mdl)
+                define_problem!(pbm, :scvx)
 
-            # SCvx algorithm parameters
-            N = 50
-            Nsub = 50
-            iter_max = 100
-            disc_method = FOH
-            λ = 10e4
-            ρ_0 = 0.0
-            ρ_1 = 0.1
-            ρ_2 = 0.6
-            β_sh = 1.5
-            β_gr = 1.5
-            η_init = 0.5
-            η_lb = 1e-4
-            η_ub = 10.0
-            ε_abs = 1e-6
-            ε_rel = 0.001 / 100
-            feas_tol = 1e-5
-            q_tr = Inf
-            q_exit = Inf
-            solver = ECOS
-            solver_options = Dict("verbose" => 0, "maxit" => 1000)
-            pars = SCvx.Parameters(
-                N,
-                Nsub,
-                iter_max,
-                disc_method,
-                λ,
-                ρ_0,
-                ρ_1,
-                ρ_2,
-                β_sh,
-                β_gr,
-                η_init,
-                η_lb,
-                η_ub,
-                ε_abs,
-                ε_rel,
-                feas_tol,
-                q_tr,
-                q_exit,
-                solver,
-                solver_options,
-            )
-
-            e, tf = test_single(mdl, pbm, pars, SCvx; plot=true, plot_name=test_id)
-            GC.gc()
+                # SCvx algorithm parameters
+                N = 50
+                Nsub = 100
+                iter_max = 100
+                disc_method = FOH
+                λ = 1e2
+                ρ_0 = 0.0
+                ρ_1 = 0.2
+                ρ_2 = 0.7
+                β_sh = 1.5
+                β_gr = 1.5
+                η_init = 1.0
+                η_lb = 1e-5
+                η_ub = 1.0
+                ε_abs = 1e-6
+                ε_rel = 1e-4
+                feas_tol = 1e-5
+                q_tr = Inf
+                q_exit = Inf
+                solver = ECOS
+                solver_options = Dict("verbose" => 0, "maxit" => 1000)
+                pars = SCvx.Parameters(
+                    N,
+                    Nsub,
+                    iter_max,
+                    disc_method,
+                    λ,
+                    ρ_0,
+                    ρ_1,
+                    ρ_2,
+                    β_sh,
+                    β_gr,
+                    η_init,
+                    η_lb,
+                    η_ub,
+                    ε_abs,
+                    ε_rel,
+                    feas_tol,
+                    q_tr,
+                    q_exit,
+                    solver,
+                    solver_options,
+                )
+                try
+                    e, tf = test_single(mdl, pbm, pars, SCvx; plot=true, plot_name=test_id)
+                    
+                catch err
+                    println("Failed with error: ", err)
+                end
+                
+                GC.gc()
+            end
         end
-    
     end    
     return nothing
 end
@@ -196,6 +209,7 @@ function sweep_gamma_tf_max()::Nothing
             e, t_finish_i = test_single(mdl, pbm, pars, SCvx; plot=false)
             e_costs[i, j]  = e
             t_finish[i, j] = t_finish_i
+
             GC.gc()
         
         end
@@ -253,6 +267,9 @@ function test_single(
 
     # Solve problem
     sol, history = solver.solve(pbm)
+    scale = pbm.common.scale
+    iSx = scale.iSx
+    @show iSx
     if plot
         export_solution_to_csv(sol; prefix=plot_name)
     end

@@ -76,4 +76,26 @@ include("starship_flip/plots.jl")
 include("starship_flip/tests.jl")
 end
 
+module AUVSimplified
+include("auv_simplified/parameters.jl")
+include("auv_simplified/definition.jl")
+include("auv_simplified/plots.jl")
+include("auv_simplified/tests.jl")
+end
+
+module AUV
+include("auv/parameters.jl")
+include("auv/definition.jl")
+include("auv/plots.jl")
+include("auv/tests.jl")
+end
+
+module AUVThruster
+include("auv_thruster/parameters.jl")
+include("auv_thruster/definition.jl")
+include("auv_thruster/plots.jl")
+include("auv_thruster/tests.jl")
+end
+
+
 end

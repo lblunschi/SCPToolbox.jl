@@ -25,9 +25,13 @@ using ECOS
 using Printf
 using ForwardDiff
 using LinearAlgebra
+using ..AUVSimplified
+using Symbolics
 # ..:: Methods ::..
 
 function define_problem!(pbm::TrajectoryProblem, algo::Symbol)::Nothing
+    set_guess!(pbm)
+
     set_dims!(pbm)
     set_scale!(pbm)
     set_cost!(pbm)
@@ -36,7 +40,7 @@ function define_problem!(pbm::TrajectoryProblem, algo::Symbol)::Nothing
     set_nonconvex_constraints!(pbm, algo)
     set_bcs!(pbm)
 
-    set_guess!(pbm)
+    
 
     return nothing
 end
@@ -71,9 +75,9 @@ function set_scale!(pbm::TrajectoryProblem)::Nothing
     advise!(pbm, :state, veh.id_r[3], (min_z, max_z))
     advise!(pbm, :state, veh.id_r[4], (-3.1415/4, 3.1415/4))
     # Velocity
-    advise!(pbm, :state, veh.id_v[1], (-3.1415/10, 3.1415/10))
+    advise!(pbm, :state, veh.id_v[1], (veh.v_min_u, veh.v_max))
     advise!(pbm, :state, veh.id_v[2:3], (veh.v_min, veh.v_max))
-    advise!(pbm, :state, veh.id_v[4], (veh.v_min_u, veh.v_max))
+    advise!(pbm, :state, veh.id_v[4], (-3.1415/10, 3.1415/10))
     # Inputs
     advise!(pbm, :input, veh.id_u, (veh.u_min, veh.u_max))
     # Parameters
@@ -103,54 +107,56 @@ function auv_initial_guess(
     pbm::TrajectoryProblem,
 )::Tuple{RealMatrix,RealMatrix,RealVector}
 
-    @printf("Computing initial guess .")
+    @printf("Computing initial guess via simplified solve .")
 
-    veh = pbm.mdl.vehicle
+    veh  = pbm.mdl.vehicle
     traj = pbm.mdl.traj
-    g = pbm.mdl.env.g
-    hyd = pbm.mdl.hydroparams
 
-    # Parameter guess
-    p_guess = zeros(pbm.np)
-    p_guess[veh.id_t] = 0.6*(traj.tf_min+traj.tf_max)
+    tf_guess = 50.0
 
-    # State guess
-    x0 = zeros(pbm.nx)
-    xf = zeros(pbm.nx)
-    x0[veh.id_r] = traj.r0
-    xf[veh.id_r] = traj.rf
-    x0[veh.id_v] = traj.v0
-    xf[veh.id_v] = traj.vf
-    x0[veh.id_e] = 0.0
-    xf[veh.id_e] = 200
+    # Solve the separate simplified problem
+    mdl_s, sol_s, history_s = AUVSimplified.solve_simplified_for_guess(
+        traj.r0,
+        traj.rf,
+        traj.v0,
+        traj.vf;
+        tf = tf_guess,
+        N = N,
+    )
 
-    x_guess = straightline_interpolate(x0, xf, N)
-    dist = norm(xf[1:2]-x0[1:2])
-    forward_vel = dist/p_guess[veh.id_t]
-    dist_up = norm(xf[3]-x0[3])
-    up_vel = dist_up/p_guess[veh.id_t]
-    for t in 1:N
-        x_guess[5, t] = forward_vel
-        x_guess[7, t] = up_vel
+    # Check status
+    if sol_s.status != @sprintf("%s", SCP_SOLVED)
+        error("Simplified problem did not solve successfully for initial guess.")
     end
-    denx = hyd.mass - hyd.added_mass_x
-    deny = hyd.mass - hyd.added_mass_y
-    denz = hyd.mass - hyd.added_mass_z
-    denr = hyd.inertia_z - hyd.added_mass_yaw
 
-    thrust_forwad = -(hyd.linear_drag_x + hyd.quadratic_drag_x*abs(forward_vel))*forward_vel / denx
+    # Allocate full guess
+    x_guess = zeros(pbm.nx, N)
+    u_guess = zeros(pbm.nu, N)
+    p_guess = zeros(pbm.np)
+    p_guess[veh.id_t] = tf_guess
 
-    thrust_sideway = 0.0
+    τ_grid = collect(LinRange(0.0, 1.0, N))
 
-    thrust_up = (- hyd.buoyancy + hyd.weight - (hyd.linear_drag_z + hyd.quadratic_drag_z*abs(up_vel))*up_vel) / denz
+    # Map simplified state and input onto full guess
+    TAM = veh.thruster_allocation_matrix
+    TAM_pinv = pinv(TAM)
 
-    thrust_yaw = 0.0
-            
-    TAM = pbm.mdl.vehicle.thruster_allocation_matrix
-    pinv_TAM = pinv(TAM)
-    u_des = [thrust_forwad; thrust_sideway; thrust_up; thrust_yaw]
-    u_4d = pinv_TAM*u_des
-    u_guess = straightline_interpolate(u_4d, u_4d, N)
+    for k in 1:N
+        τ = τ_grid[k]
+
+        xk = sample(sol_s.xc, τ)
+        uk_s = sample(sol_s.uc, τ)   # 4D: [τx, τy, τz, τyaw]
+
+        # copy states directly
+        x_guess[:, k] .= xk
+
+        # map 4D wrench -> 6 thrusters for full problem
+        uk_full = TAM_pinv * uk_s
+        uk_full .= clamp.(uk_full, veh.u_min, veh.u_max)
+
+        u_guess[:, k] .= uk_full
+    end
+
     @printf(". done\n")
     return x_guess, u_guess, p_guess
 end
@@ -158,7 +164,7 @@ end
 function set_guess!(pbm::TrajectoryProblem)::Nothing
 
     problem_set_guess!(pbm, auv_initial_guess)
-
+    @printf(". done\n")
     return nothing
 end
 
@@ -209,13 +215,7 @@ function get_current(state::AbstractVector;
     #return u_c, v_c, w_c
 end
 
-function polyval(coeffs, x)
-    y = zero(x)
-    @inbounds for c in coeffs
-        y = y * x + c 
-    end
-    return y
-end
+
 
 function get_power_from_thrust(u_i::AbstractVector)
     # Both fits ensure first order continuity (f(0) = f'(0) = 0.0)
@@ -346,28 +346,97 @@ function dynamics(
     return f
 end
 
-function set_dynamics!(pbm::TrajectoryProblem)::Nothing
-    A_auto = (t,k,x,u,p,pbm) -> ForwardDiff.jacobian(xx -> dynamics(t,k,xx,u,p,pbm), x)
-    B_auto = (t,k,x,u,p,pbm) -> ForwardDiff.jacobian(uu -> dynamics(t,k,x,uu,p,pbm), u)
-    F_auto = (t,k,x,u,p,pbm) -> ForwardDiff.jacobian(pp -> dynamics(t,k,x,u,pp,pbm), p)
+function pack_symbolics_args(x::AbstractVector, u::AbstractVector, p)
+    return [x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[8],
+            u[1], u[2], u[3], u[4], u[5], u[6],
+            p]
+end
 
-    problem_set_dynamics!(
-        pbm,
-        # Dynamics f
-        (t, k, x, u, p, pbm) -> begin
-            f = dynamics(t, k, x, u, p, pbm)
-            return f
-        end,
-        # Jacobian df/dx
-        A_auto,
-        # Jacobian df/du
-        B_auto,
-        # Jacobian df/dp
-        F_auto,
+function dynamics_symbolic(x, u, p, pbm)
+    return dynamics(0.0, 1, x, u, [p], pbm)
+end
+
+function set_dynamics!(pbm::TrajectoryProblem)::Nothing
+
+    Symbolics.@variables xsym[1:9]
+    Symbolics.@variables usym[1:6]
+    Symbolics.@variables psym
+
+    dyn_symb = dynamics_symbolic(xsym, usym, psym, pbm)
+
+    A_symb = Symbolics.jacobian(dyn_symb, xsym)
+    B_symb = Symbolics.jacobian(dyn_symb, usym)
+    F_symb = Symbolics.jacobian(dyn_symb, [psym])
+
+    vars = [xsym...; usym...; psym]
+
+    f_oop, f_ip = build_function(
+        dyn_symb,
+        vars;
+        expression = Val(false),
+        parallel = Symbolics.SerialForm(),
     )
 
+    A_oop, A_ip = build_function(
+        A_symb,
+        vars;
+        expression = Val(false),
+        parallel = Symbolics.SerialForm(),
+    )
+
+    B_oop, B_ip = build_function(
+        B_symb,
+        vars;
+        expression = Val(false),
+        parallel = Symbolics.SerialForm(),
+    )
+
+    F_oop, F_ip = build_function(
+        F_symb,
+        vars;
+        expression = Val(false),
+        parallel = Symbolics.SerialForm(),
+    )
+
+    f_cb = function(t, k, x, u, p, pbm)
+        arg = [x...; u...; p[1]]
+        out = zeros(eltype(arg), pbm.nx)
+        f_ip(out, arg)
+        return out
+    end
+
+    A_cb = function(t, k, x, u, p, pbm)
+        arg = [x...; u...; p[1]]
+        out = zeros(eltype(arg), pbm.nx, pbm.nx)
+        A_ip(out, arg)
+        return out
+    end
+
+    B_cb = function(t, k, x, u, p, pbm)
+        arg = [x...; u...; p[1]]
+        out = zeros(eltype(arg), pbm.nx, pbm.nu)
+        B_ip(out, arg)
+        return out
+    end
+
+    F_cb = function(t, k, x, u, p, pbm)
+        arg = [x...; u...; p[1]]
+        out = zeros(eltype(arg), pbm.nx, pbm.np)
+        F_ip(out, arg)
+        return out
+    end
+
+    problem_set_dynamics!(pbm, f_cb, A_cb, B_cb, F_cb)
+        """A_auto = (t,k,x,u,p,pbm) -> ForwardDiff.jacobian(xx -> dynamics(t,k,xx,u,p,pbm), x)
+    B_auto = (t,k,x,u,p,pbm) -> ForwardDiff.jacobian(uu -> dynamics(t,k,x,uu,p,pbm), u)
+    F_auto = (t,k,x,u,p,pbm) -> ForwardDiff.jacobian(pp -> dynamics(t,k,x,u,pp,pbm), p)"""
     return nothing
 end
+
+
+
+
+
 
 function set_convex_constraints!(pbm::TrajectoryProblem)::Nothing
 
